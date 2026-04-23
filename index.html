@@ -2,15 +2,11 @@
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Sistema de Consulta de Produtos - FRIBAL</title>
     <link rel="stylesheet" href="styles.css">
-    <!-- HTML5 QR Code -->
-    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js">
-    </script>
-    <!-- SheetJS para leitura de Excel -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
-    </script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -34,7 +30,7 @@
             </div>
 
             <!-- Upload Excel -->
-            <div class="upload-section" id="uploadSection" onclick="document.getElementById('fileInput').click()">
+            <div class="upload-section" id="uploadSection">
                 <div class="upload-icon">📁</div>
                 <p class="upload-text"><strong>Clique aqui</strong> para carregar a planilha de produtos</p>
                 <p class="upload-text" style="font-size: 0.8rem; margin-top: 5px;">Formatos aceitos: .xlsx, .xls</p>
@@ -60,14 +56,29 @@
                 <div class="scanner-container" id="scannerContainer">
                     <div id="reader"></div>
                 </div>
-                <div style="display: flex; gap: 10px; justify-content: center;">
+                <div style="display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
                     <button class="btn btn-outline" id="toggleScannerBtn">
                         ⏯️ Parar Scanner
                     </button>
+                    <button class="btn btn-outline hidden" id="retryCameraBtn">
+                        🔄 Tentar Novamente
+                    </button>
                 </div>
                 <p style="text-align: center; margin-top: 10px; color: var(--gray); font-size: 0.85rem;" id="scannerStatus">
-                    Aponte a câmera para um código de barras
+                    Inicializando câmera...
                 </p>
+                <div class="camera-error hidden" id="cameraError">
+                    <p>⚠️ Não foi possível acessar a câmera</p>
+                    <p style="font-size: 0.85rem; margin-top: 5px;">Verifique se:</p>
+                    <ul style="font-size: 0.85rem; text-align: left; display: inline-block;">
+                        <li>O site está em HTTPS</li>
+                        <li>As permissões da câmera estão liberadas</li>
+                        <li>Seu navegador suporta acesso à câmera</li>
+                    </ul>
+                    <button class="btn btn-primary" style="margin-top: 15px;" onclick="switchTab('manual')">
+                        ⌨️ Usar Busca Manual
+                    </button>
+                </div>
             </div>
 
             <!-- Manual Tab -->
@@ -76,11 +87,11 @@
                     <input type="text" 
                            id="manualEan" 
                            placeholder="Digite o código de barras (EAN) ou nome do produto" 
-                           autocomplete="off">
+                           autocomplete="off"
+                           inputmode="numeric">
                     <button class="btn btn-primary" id="searchManualBtn">
                         🔍 Buscar
                     </button>
-                    <!-- Autocomplete dropdown -->
                     <div class="autocomplete-dropdown hidden" id="autocompleteDropdown"></div>
                 </div>
                 <p style="text-align: center; margin-top: 10px; color: var(--gray); font-size: 0.85rem;">
