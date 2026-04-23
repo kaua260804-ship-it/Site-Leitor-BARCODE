@@ -61,7 +61,6 @@ body::before {
     z-index: 1;
 }
 
-/* Header */
 .header {
     text-align: center;
     margin-bottom: 30px;
@@ -112,7 +111,6 @@ body::before {
     letter-spacing: 1px;
 }
 
-/* Main card */
 .main-card {
     background: white;
     border-radius: var(--radius);
@@ -125,7 +123,6 @@ body::before {
     box-shadow: var(--shadow-hover);
 }
 
-/* Upload section */
 .upload-section {
     background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
     border-radius: var(--radius-sm);
@@ -174,7 +171,6 @@ body::before {
     display: block;
 }
 
-/* Status badge */
 .status-badge {
     display: inline-flex;
     align-items: center;
@@ -208,7 +204,6 @@ body::before {
     background: currentColor;
 }
 
-/* Tabs */
 .tabs {
     display: flex;
     gap: 5px;
@@ -250,7 +245,6 @@ body::before {
     font-size: 1.1rem;
 }
 
-/* Tab content */
 .tab-content {
     display: none;
     animation: fadeIn 0.3s ease;
@@ -265,7 +259,6 @@ body::before {
     to { opacity: 1; transform: translateY(0); }
 }
 
-/* Scanner */
 .scanner-container {
     border-radius: var(--radius-sm);
     overflow: hidden;
@@ -280,7 +273,37 @@ body::before {
     width: 100%;
 }
 
-/* Input group */
+#reader video {
+    width: 100% !important;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0 !important;
+}
+
+#reader__scan_region {
+    position: relative;
+}
+
+#reader__scan_region img {
+    display: none;
+}
+
+.camera-error {
+    text-align: center;
+    padding: 25px;
+    background: #fff3cd;
+    border-radius: var(--radius-sm);
+    color: #856404;
+    margin-bottom: 20px;
+}
+
+.camera-error.hidden {
+    display: none;
+}
+
+.camera-error ul {
+    margin-top: 10px;
+    padding-left: 20px;
+}
+
 .input-group {
     display: flex;
     gap: 10px;
@@ -289,10 +312,11 @@ body::before {
 
 .autocomplete-wrapper {
     position: relative;
+    flex: 1;
 }
 
 #manualEan {
-    flex: 1;
+    width: 100%;
     padding: 14px 18px;
     border: 2px solid var(--border);
     border-radius: var(--radius-sm);
@@ -301,7 +325,6 @@ body::before {
     letter-spacing: 1px;
     transition: var(--transition);
     outline: none;
-    width: 100%;
 }
 
 #manualEan:focus {
@@ -309,7 +332,6 @@ body::before {
     box-shadow: 0 0 0 3px rgba(233, 68, 96, 0.1);
 }
 
-/* Autocomplete dropdown */
 .autocomplete-dropdown {
     position: absolute;
     top: 100%;
@@ -373,7 +395,6 @@ body::before {
     font-size: 0.9rem;
 }
 
-/* Buttons */
 .btn {
     padding: 14px 28px;
     border: none;
@@ -421,7 +442,6 @@ body::before {
     color: white;
 }
 
-/* Result card */
 .result-card {
     background: white;
     border-radius: var(--radius-sm);
@@ -459,6 +479,7 @@ body::before {
     justify-content: center;
     font-size: 22px;
     color: white;
+    flex-shrink: 0;
 }
 
 .result-not-found .result-icon {
@@ -485,6 +506,28 @@ body::before {
 @media (max-width: 600px) {
     .info-grid {
         grid-template-columns: 1fr;
+    }
+    
+    .main-card {
+        padding: 20px;
+    }
+    
+    .logo h1 {
+        font-size: 1.5rem;
+    }
+    
+    .tab {
+        padding: 10px 12px;
+        font-size: 0.8rem;
+    }
+    
+    .btn {
+        padding: 12px 20px;
+        font-size: 0.85rem;
+    }
+    
+    .input-group {
+        flex-direction: column;
     }
 }
 
@@ -548,7 +591,6 @@ body::before {
     100% { transform: scale(1); }
 }
 
-/* History */
 .history-table {
     width: 100%;
     border-collapse: collapse;
@@ -606,7 +648,6 @@ body::before {
     color: #856404;
 }
 
-/* Loading */
 .loading {
     text-align: center;
     padding: 30px;
@@ -630,7 +671,6 @@ body::before {
     to { transform: rotate(360deg); }
 }
 
-/* Toast */
 .toast {
     position: fixed;
     bottom: 30px;
@@ -648,6 +688,8 @@ body::before {
     display: flex;
     align-items: center;
     gap: 8px;
+    max-width: 90%;
+    text-align: center;
 }
 
 .toast.hidden {
@@ -666,7 +708,6 @@ body::before {
     background: var(--accent);
 }
 
-/* Footer */
 .footer {
     text-align: center;
     margin-top: 30px;
@@ -689,4 +730,43 @@ body::before {
     font-size: 0.75rem;
     font-weight: 600;
     margin-left: 10px;
+}
+
+/* Mobile optimizations */
+@media (max-width: 480px) {
+    body {
+        padding: 10px;
+    }
+    
+    .main-card {
+        padding: 15px;
+        border-radius: 12px;
+    }
+    
+    .tabs {
+        gap: 2px;
+        padding: 3px;
+    }
+    
+    .tab {
+        padding: 10px 8px;
+        font-size: 0.75rem;
+    }
+    
+    .scanner-container {
+        max-width: 100%;
+    }
+    
+    #reader {
+        width: 100% !important;
+    }
+    
+    .history-table {
+        font-size: 0.7rem;
+    }
+    
+    .history-table th,
+    .history-table td {
+        padding: 8px 4px;
+    }
 }
