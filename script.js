@@ -1,6 +1,7 @@
 // ============ GLOBAL STATE ============
 let productsData = [];
 let eanIndex = {};
+let codeIndex = {};
 let descriptionIndex = [];
 let searchHistory = [];
 let scannerActive = false;
@@ -38,10 +39,22 @@ const elements = {
     resultTitle: $('resultTitle'),
     resultEanSearched: $('resultEanSearched'),
     resultInfo: $('resultInfo'),
-    resultIcon: document.querySelector('.result-icon'),
     toast: $('toast'),
     tabs: document.querySelectorAll('.tab'),
     tabContents: document.querySelectorAll('.tab-content'),
+};
+
+// Mapeamento das colunas da nova planilha
+const COLUMN_MAP = {
+    'cod_sge': 'COD SGE',
+    'desc_sge': 'DESC SGE', 
+    'unid': 'UNID',
+    'cod_fml_consinco': 'COD FML CONSINCO',
+    'cod_prd_consinco': 'COD PRD CONSINCO',
+    'desc_consinco': 'DESC CONSINCO',
+    'fornecedor_cod': 'FORNECEDOR_COD',
+    'fornecedor': 'FORNECEDOR',
+    'ean_start': 8 // Índice onde começam as colunas EAN (EAN1, EAN2...)
 };
 
 // ============ UTILS ============
@@ -57,6 +70,17 @@ function showToast(message, type = '') {
 
 function normalizeEan(ean) {
     return String(ean).trim().replace(/[^0-9]/g, '');
+}
+
+function normalizeCode(code) {
+    return String(code).trim().replace(/^0+/, '');
+}
+
+function escHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
 }
 
 // ============ FILE HANDLING ============
@@ -82,7 +106,7 @@ function handleFileUpload(event) {
             const sheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[sheetName];
             const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
-            processExcelData(jsonData);
+            processExcelDataNew(jsonData);
             elements.loading.classList.add('hidden');
             
             elements.fileName.classList.add('show');
@@ -99,71 +123,98 @@ function handleFileUpload(event) {
     reader.readAsArrayBuffer(file);
 }
 
-function processExcelData(data) {
+function processExcelDataNew(data) {
     productsData = [];
     eanIndex = {};
+    codeIndex = {};
     descriptionIndex = [];
 
-    let currentProduct = null;
-    let eanCodes = [];
+    if (data.length < 2) {
+        console.error('Planilha vazia ou muito pequena');
+        return;
+    }
 
-    const eanRegex = /^\d{13,14}$/;
-    const codeRegex = /^\d{3,5}$/;
+    // A primeira linha deve ser o cabeçalho
+    const headerRow = data[0];
+    console.log('📋 Cabeçalhos encontrados:', headerRow);
 
-    for (let i = 0; i < data.length; i++) {
+    // Encontrar índices das colunas principais
+    const colIndexes = {};
+    headerRow.forEach((col, index) => {
+        const colUpper = String(col).toUpperCase().trim();
+        if (colUpper.includes('COD SGE') || colUpper === 'CÓDIGO') colIndexes.cod_sge = index;
+        if (colUpper.includes('DESC SGE') || colUpper === 'DESCRIÇÃO') colIndexes.desc_sge = index;
+        if (colUpper === 'UNID' || colUpper === 'UN') colIndexes.unid = index;
+        if (colUpper.includes('COD FML')) colIndexes.cod_fml = index;
+        if (colUpper.includes('COD PRD')) colIndexes.cod_prd = index;
+        if (colUpper.includes('DESC CONSINCO')) colIndexes.desc_consinco = index;
+        if (colUpper.includes('FORNECEDOR_COD') || (colUpper.includes('FORNECEDOR') && !colUpper.includes('NOME'))) colIndexes.forn_cod = index;
+        if (colUpper === 'FORNECEDOR' || colUpper.includes('NOME FORNECEDOR')) colIndexes.forn_nome = index;
+        if (colUpper.startsWith('EAN')) colIndexes.ean_start = Math.min(colIndexes.ean_start || 999, index);
+    });
+
+    console.log('🔍 Índices das colunas:', colIndexes);
+
+    // Processar dados a partir da linha 1
+    for (let i = 1; i < data.length; i++) {
         const row = data[i];
         if (!row || row.length === 0) continue;
 
-        const firstCell = String(row[0] || '').trim();
+        const codSge = normalizeCode(String(row[colIndexes.cod_sge] || '').trim());
+        
+        if (!codSge || codSge === '0') continue;
 
-        if (firstCell.includes('SGE') || firstCell.includes('EMPRESA') ||
-            firstCell.includes('DPR01') || firstCell.includes('PRODUTOS') ||
-            firstCell === 'CÓDIGO' || firstCell.includes('TOTAL')) {
-            continue;
-        }
-
-        if (codeRegex.test(firstCell)) {
-            if (currentProduct) {
-                currentProduct.eans = [...new Set(eanCodes.filter(e => e.length >= 13))];
-                productsData.push(currentProduct);
-                addToIndexes(currentProduct);
-            }
-
-            currentProduct = {
-                codigo: firstCell,
-                descricao: String(row[1] || '').trim(),
-                unid: String(row[2] || '').trim(),
-                fornecedor: String(row[4] || row[3] || '').trim(),
-                eans: []
-            };
-            eanCodes = [];
-
-            for (let j = 4; j < Math.min(row.length, 20); j++) {
-                const val = String(row[j] || '').trim();
-                if (eanRegex.test(val)) eanCodes.push(val);
-            }
-        } else {
-            for (let j = 0; j < Math.min(row.length, 20); j++) {
-                const val = String(row[j] || '').trim();
-                if (eanRegex.test(val)) eanCodes.push(val);
+        // Extrair EANs
+        const eans = [];
+        if (colIndexes.ean_start !== undefined) {
+            for (let j = colIndexes.ean_start; j < row.length; j++) {
+                const val = normalizeEan(String(row[j] || ''));
+                if (val.length >= 13) {
+                    eans.push(val);
+                }
             }
         }
-    }
 
-    if (currentProduct) {
-        currentProduct.eans = [...new Set(eanCodes.filter(e => e.length >= 13))];
-        productsData.push(currentProduct);
-        addToIndexes(currentProduct);
+        // Se não encontrou pela coluna EAN, procurar em todas as colunas
+        if (eans.length === 0) {
+            for (let j = 0; j < row.length; j++) {
+                const val = normalizeEan(String(row[j] || ''));
+                if (val.length >= 13 && !eans.includes(val)) {
+                    eans.push(val);
+                }
+            }
+        }
+
+        const product = {
+            cod_sge: codSge,
+            desc_sge: String(row[colIndexes.desc_sge] || '').trim(),
+            unid: String(row[colIndexes.unid] || '').trim(),
+            cod_fml_consinco: String(row[colIndexes.cod_fml] || '').trim(),
+            cod_prd_consinco: String(row[colIndexes.cod_prd] || '').trim(),
+            desc_consinco: String(row[colIndexes.desc_consinco] || '').trim(),
+            fornecedor_cod: String(row[colIndexes.forn_cod] || '').trim(),
+            fornecedor_nome: String(row[colIndexes.forn_nome] || '').trim(),
+            eans: eans
+        };
+
+        productsData.push(product);
+
+        // Indexar por EAN
+        eans.forEach(ean => {
+            if (!eanIndex[ean]) eanIndex[ean] = product;
+        });
+
+        // Indexar por código SGE
+        codeIndex[codSge] = product;
+        
+        // Também indexar pelo código CONSINCO se existir
+        if (product.cod_prd_consinco) {
+            codeIndex[normalizeCode(product.cod_prd_consinco)] = product;
+        }
     }
 
     updateStatusBadge();
     console.log(`✅ Carregados ${productsData.length} produtos, ${Object.keys(eanIndex).length} EANs`);
-}
-
-function addToIndexes(product) {
-    product.eans.forEach(ean => {
-        if (!eanIndex[ean]) eanIndex[ean] = product;
-    });
 }
 
 function updateStatusBadge() {
@@ -186,6 +237,8 @@ async function autoLoadExcel() {
         './Produtos_Organizados.xlsx',
         '/Produtos_Organizados.xlsx',
         '/Site-Leitor-BARCODE/Produtos_Organizados.xlsx',
+        'Kaua Souza - Prd01 - Relatório de Codificação dos Produtos.xlsx',
+        '/Kaua Souza - Prd01 - Relatório de Codificação dos Produtos.xlsx',
     ];
 
     for (const path of paths) {
@@ -198,14 +251,14 @@ async function autoLoadExcel() {
                 const sheetName = workbook.SheetNames[0];
                 const worksheet = workbook.Sheets[sheetName];
                 const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
-                processExcelData(jsonData);
+                processExcelDataNew(jsonData);
                 
                 elements.fileName.classList.add('show');
                 elements.fileName.textContent = '📄 Carregado automaticamente';
                 elements.uploadSection.classList.add('active');
                 
                 console.log('✅ Planilha carregada de:', path);
-                showToast('✅ Planilha carregada automaticamente! ' + productsData.length + ' produtos', 'success');
+                showToast('✅ Planilha carregada! ' + productsData.length + ' produtos', 'success');
                 return true;
             }
         } catch (e) {
@@ -220,29 +273,20 @@ async function autoLoadExcel() {
 // ============ SCANNER ============
 function initScanner() {
     if (html5QrCode) {
-        try {
-            html5QrCode.clear();
-        } catch(e) {}
+        try { html5QrCode.clear(); } catch(e) {}
     }
     html5QrCode = new Html5Qrcode("reader");
 }
 
 async function startScanner() {
-    if (!html5QrCode) {
-        initScanner();
-    }
-
-    // Verificar se já está escaneando
-    if (scannerActive) {
-        return;
-    }
+    if (!html5QrCode) initScanner();
+    if (scannerActive) return;
 
     elements.scannerStatus.textContent = '🔄 Solicitando acesso à câmera...';
     elements.cameraError.classList.add('hidden');
     elements.retryCameraBtn.classList.add('hidden');
     elements.scannerContainer.style.display = 'block';
 
-    // Lista de câmeras para tentar
     const cameraConfigs = [
         { facingMode: "environment" },
         { facingMode: { exact: "environment" } },
@@ -254,12 +298,8 @@ async function startScanner() {
     
     for (const config of cameraConfigs) {
         if (started) break;
-        
         try {
-            // Parar scanner anterior se existir
-            if (html5QrCode.isScanning) {
-                await html5QrCode.stop();
-            }
+            if (html5QrCode.isScanning) await html5QrCode.stop();
             
             await html5QrCode.start(
                 config,
@@ -268,10 +308,7 @@ async function startScanner() {
                     qrbox: function(viewfinderWidth, viewfinderHeight) {
                         const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
                         const qrboxSize = Math.floor(minEdge * 0.6);
-                        return {
-                            width: qrboxSize,
-                            height: qrboxSize
-                        };
+                        return { width: qrboxSize, height: qrboxSize };
                     },
                     aspectRatio: 1.77778,
                 },
@@ -286,16 +323,12 @@ async function startScanner() {
             elements.scannerStatus.textContent = '📷 Aponte a câmera para um código de barras';
             elements.cameraError.classList.add('hidden');
             elements.retryCameraBtn.classList.add('hidden');
-            console.log('✅ Scanner iniciado com config:', config);
-            
         } catch (err) {
             console.log('❌ Falha com config:', config, err.message);
         }
     }
 
-    if (!started) {
-        handleCameraError();
-    }
+    if (!started) handleCameraError();
 }
 
 async function stopScanner() {
@@ -369,11 +402,7 @@ function onScanSuccess(decodedText) {
 }
 
 function onScanError(error) {
-    // Erros normais durante o scan são ignorados
-    if (error && error.includes('NotFoundException')) {
-        return;
-    }
-    console.log('Scan error:', error);
+    if (error && error.includes('NotFoundException')) return;
 }
 
 function playBeep() {
@@ -394,9 +423,7 @@ function playBeep() {
 elements.manualEan.addEventListener('input', handleAutocomplete);
 elements.manualEan.addEventListener('keydown', handleAutocompleteKeydown);
 elements.manualEan.addEventListener('focus', () => {
-    if (elements.manualEan.value.trim().length >= 2) {
-        handleAutocomplete();
-    }
+    if (elements.manualEan.value.trim().length >= 2) handleAutocomplete();
 });
 
 document.addEventListener('click', (e) => {
@@ -407,7 +434,8 @@ document.addEventListener('click', (e) => {
 });
 
 function handleAutocomplete() {
-    const query = normalizeEan(elements.manualEan.value);
+    const query = elements.manualEan.value.trim();
+    const queryNormalized = normalizeEan(query);
     
     if (query.length < 2 || productsData.length === 0) {
         elements.autocompleteDropdown.classList.add('hidden');
@@ -415,25 +443,56 @@ function handleAutocomplete() {
         return;
     }
     
-    // Buscar por EAN
     const results = [];
     const seen = new Set();
     
-    // Primeiro, buscar EANs que contenham o texto
+    // Buscar por EAN
     Object.keys(eanIndex).forEach(ean => {
-        if (ean.includes(query) && !seen.has(eanIndex[ean].codigo)) {
+        if (ean.includes(queryNormalized) && !seen.has(eanIndex[ean].cod_sge)) {
             results.push({ ean: ean, product: eanIndex[ean] });
-            seen.add(eanIndex[ean].codigo);
+            seen.add(eanIndex[ean].cod_sge);
         }
     });
     
-    // Depois, buscar por descrição
+    // Buscar por código SGE
     if (results.length < 10) {
-        const searchTerm = elements.manualEan.value.trim().toLowerCase();
         productsData.forEach(p => {
-            if (!seen.has(p.codigo) && p.descricao.toLowerCase().includes(searchTerm)) {
+            if (!seen.has(p.cod_sge) && p.cod_sge.includes(query)) {
                 results.push({ ean: p.eans[0] || '', product: p });
-                seen.add(p.codigo);
+                seen.add(p.cod_sge);
+            }
+        });
+    }
+    
+    // Buscar por descrição SGE
+    if (results.length < 10) {
+        const searchLower = query.toLowerCase();
+        productsData.forEach(p => {
+            if (!seen.has(p.cod_sge) && p.desc_sge.toLowerCase().includes(searchLower)) {
+                results.push({ ean: p.eans[0] || '', product: p });
+                seen.add(p.cod_sge);
+            }
+        });
+    }
+    
+    // Buscar por descrição CONSINCO
+    if (results.length < 10) {
+        const searchLower = query.toLowerCase();
+        productsData.forEach(p => {
+            if (!seen.has(p.cod_sge) && p.desc_consinco && p.desc_consinco.toLowerCase().includes(searchLower)) {
+                results.push({ ean: p.eans[0] || '', product: p });
+                seen.add(p.cod_sge);
+            }
+        });
+    }
+    
+    // Buscar por código CONSINCO
+    if (results.length < 10) {
+        const queryCode = normalizeCode(query);
+        productsData.forEach(p => {
+            if (!seen.has(p.cod_sge) && p.cod_prd_consinco && normalizeCode(p.cod_prd_consinco).includes(queryCode)) {
+                results.push({ ean: p.eans[0] || '', product: p });
+                seen.add(p.cod_sge);
             }
         });
     }
@@ -449,8 +508,8 @@ function handleAutocomplete() {
     
     elements.autocompleteDropdown.innerHTML = limitedResults.map((item, index) => `
         <div class="autocomplete-item" data-index="${index}" data-ean="${item.ean}">
-            <span class="suggestion-code">${item.product.codigo}</span>
-            <span class="suggestion-desc">${item.product.descricao}</span>
+            <span class="suggestion-code">${item.product.cod_sge}</span>
+            <span class="suggestion-desc">${item.product.desc_sge}</span>
             <span class="suggestion-ean">${item.ean}</span>
         </div>
     `).join('');
@@ -494,7 +553,7 @@ function handleAutocompleteKeydown(e) {
             searchEan(ean);
         } else {
             elements.autocompleteDropdown.classList.add('hidden');
-            searchManual();
+            searchByQuery(elements.manualEan.value.trim());
         }
     } else if (e.key === 'Escape') {
         elements.autocompleteDropdown.classList.add('hidden');
@@ -514,34 +573,56 @@ function updateAutocompleteSelection(items) {
 }
 
 // ============ SEARCH ============
-elements.searchManualBtn.addEventListener('click', searchManual);
+elements.searchManualBtn.addEventListener('click', () => {
+    searchByQuery(elements.manualEan.value.trim());
+});
+
 elements.manualEan.addEventListener('keypress', function(e) {
     if (e.key === 'Enter' && !elements.autocompleteDropdown.querySelector('.autocomplete-item.active')) {
-        searchManual();
+        searchByQuery(elements.manualEan.value.trim());
     }
 });
 
-function searchManual() {
-    const input = elements.manualEan;
-    const query = normalizeEan(input.value);
-    
+function searchByQuery(query) {
     elements.autocompleteDropdown.classList.add('hidden');
     
-    if (query.length >= 13) {
-        searchEan(query);
-    } else if (query.length > 0) {
-        const searchTerm = input.value.trim().toLowerCase();
-        const descResults = productsData.filter(p => 
-            p.descricao.toLowerCase().includes(searchTerm)
-        );
-        if (descResults.length > 0) {
-            searchEan(descResults[0].eans[0] || '');
-        } else {
-            showToast('Nenhum produto encontrado', 'error');
-        }
-    } else {
-        showToast('Digite um código de barras ou nome do produto', 'error');
+    if (!query) {
+        showToast('Digite algo para buscar', 'error');
+        return;
     }
+    
+    const queryNormalized = normalizeEan(query);
+    
+    if (queryNormalized.length >= 13) {
+        // É um EAN
+        searchEan(queryNormalized);
+        return;
+    }
+    
+    // Buscar por código SGE
+    const byCode = productsData.filter(p => p.cod_sge === normalizeCode(query));
+    if (byCode.length > 0) {
+        searchEan(byCode[0].eans[0] || '');
+        return;
+    }
+    
+    // Buscar por descrição
+    const searchLower = query.toLowerCase();
+    const byDesc = productsData.filter(p => 
+        p.desc_sge.toLowerCase().includes(searchLower) ||
+        (p.desc_consinco && p.desc_consinco.toLowerCase().includes(searchLower))
+    );
+    
+    if (byDesc.length > 0) {
+        searchEan(byDesc[0].eans[0] || '');
+        return;
+    }
+    
+    showToast('Nenhum produto encontrado', 'error');
+}
+
+function searchManual() {
+    searchByQuery(elements.manualEan.value.trim());
 }
 
 function searchEan(ean) {
@@ -564,11 +645,10 @@ function displayResult(ean) {
     
     elements.resultCard.classList.remove('hidden');
     elements.resultCard.classList.remove('result-found', 'result-not-found');
-    elements.resultEanSearched.textContent = 'EAN consultado: ' + ean;
+    elements.resultEanSearched.textContent = '🔍 Pesquisado: ' + ean;
 
     if (product) {
         elements.resultCard.classList.add('result-found');
-        if (elements.resultIcon) elements.resultIcon.textContent = '✅';
         elements.resultTitle.textContent = '✅ Produto Encontrado';
 
         const allEans = product.eans.map(e => {
@@ -578,41 +658,56 @@ function displayResult(ean) {
 
         elements.resultInfo.innerHTML = `
             <div class="info-item">
-                <label>📦 Código</label>
-                <div class="value code">${product.codigo}</div>
+                <label>📦 Código SGE</label>
+                <div class="value code">${product.cod_sge}</div>
             </div>
             <div class="info-item">
-                <label>📝 Descrição</label>
-                <div class="value">${escHtml(product.descricao) || '-'}</div>
+                <label>📝 Descrição SGE</label>
+                <div class="value">${escHtml(product.desc_sge) || '-'}</div>
             </div>
             <div class="info-item">
                 <label>📏 Unidade</label>
                 <div class="value">${escHtml(product.unid) || '-'}</div>
             </div>
             <div class="info-item">
+                <label>🔢 Cód. Família Consinco</label>
+                <div class="value code">${product.cod_fml_consinco || '-'}</div>
+            </div>
+            <div class="info-item">
+                <label>🔢 Cód. Produto Consinco</label>
+                <div class="value code">${product.cod_prd_consinco || '-'}</div>
+            </div>
+            <div class="info-item">
+                <label>📝 Descrição Consinco</label>
+                <div class="value">${escHtml(product.desc_consinco) || '-'}</div>
+            </div>
+            <div class="info-item">
+                <label>🏢 Cód. Fornecedor</label>
+                <div class="value code">${product.fornecedor_cod || '-'}</div>
+            </div>
+            <div class="info-item">
                 <label>🏢 Fornecedor</label>
-                <div class="value">${escHtml(product.fornecedor) || '-'}</div>
+                <div class="value">${escHtml(product.fornecedor_nome) || '-'}</div>
             </div>
             <div class="info-item" style="grid-column: 1 / -1;">
-                <label>🏷️ Todos os EANs (${product.eans.length})</label>
-                <div class="ean-list">${allEans || '<span style="color: var(--gray);">Nenhum EAN</span>'}</div>
+                <label>🏷️ Códigos de Barras (${product.eans.length})</label>
+                <div class="ean-list">${allEans || '<span style="color: var(--gray);">Nenhum EAN cadastrado</span>'}</div>
             </div>
         `;
 
         addToHistory(ean, product, true);
     } else {
         elements.resultCard.classList.add('result-not-found');
-        if (elements.resultIcon) elements.resultIcon.textContent = '⚠️';
         elements.resultTitle.textContent = '❌ Produto Não Encontrado';
 
         elements.resultInfo.innerHTML = `
             <div class="info-item" style="grid-column: 1 / -1;">
-                <label>🔍 EAN Consultado</label>
+                <label>🔍 Pesquisado</label>
                 <div class="value code">${ean}</div>
             </div>
             <div class="info-item" style="grid-column: 1 / -1;">
                 <label>📋 Status</label>
-                <div class="value" style="color: #856404;">Código de barras não encontrado na base de dados.</div>
+                <div class="value" style="color: #856404;">Não encontrado na base de dados.</div>
             </div>
         `;
 
@@ -626,22 +721,15 @@ function displayResult(ean) {
     }, 100);
 }
 
-function escHtml(str) {
-    if (!str) return '';
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-}
-
 // ============ HISTORY ============
 function addToHistory(ean, product, found) {
     const entry = {
         ean: ean,
         timestamp: new Date(),
         found: found,
-        codigo: product ? product.codigo : '-',
-        descricao: product ? product.descricao : '-',
-        fornecedor: product ? product.fornecedor : '-'
+        codigo: product ? product.cod_sge : '-',
+        descricao: product ? product.desc_sge : '-',
+        fornecedor: product ? product.fornecedor_nome : '-'
     };
 
     searchHistory.unshift(entry);
@@ -660,7 +748,7 @@ function updateHistoryDisplay() {
         <table class="history-table">
             <thead>
                 <tr>
-                    <th>Data/Hora</th>
+                    <th>Hora</th>
                     <th>EAN</th>
                     <th>Código</th>
                     <th>Descrição</th>
@@ -672,10 +760,9 @@ function updateHistoryDisplay() {
 
     searchHistory.forEach(entry => {
         const time = entry.timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-        const date = entry.timestamp.toLocaleDateString('pt-BR');
         html += `
             <tr>
-                <td style="white-space: nowrap; font-size: 0.8rem;">${date} ${time}</td>
+                <td style="white-space: nowrap; font-size: 0.8rem;">${time}</td>
                 <td class="ean-code">${entry.ean}</td>
                 <td>${entry.codigo}</td>
                 <td class="description" title="${escHtml(entry.descricao)}">${escHtml(entry.descricao)}</td>
@@ -701,8 +788,7 @@ function clearHistory() {
 // ============ TABS ============
 elements.tabs.forEach(tab => {
     tab.addEventListener('click', function() {
-        const tabName = this.dataset.tab;
-        switchTab(tabName);
+        switchTab(this.dataset.tab);
     });
 });
 
@@ -713,9 +799,7 @@ function switchTab(tabName) {
     if (tabName === 'scanner') {
         elements.tabs[0].classList.add('active');
         document.getElementById('tab-scanner').classList.add('active');
-        if (!scannerActive && productsData.length > 0) {
-            startScanner();
-        }
+        if (!scannerActive && productsData.length > 0) startScanner();
     } else if (tabName === 'manual') {
         elements.tabs[1].classList.add('active');
         document.getElementById('tab-manual').classList.add('active');
@@ -733,59 +817,37 @@ elements.toggleScannerBtn.addEventListener('click', toggleScanner);
 elements.retryCameraBtn.addEventListener('click', retryCamera);
 elements.clearHistoryBtn.addEventListener('click', clearHistory);
 
-// Suporte a gestos touch para mobile
+// Swipe para mobile
 let touchStartX = 0;
 document.addEventListener('touchstart', (e) => {
     touchStartX = e.touches[0].clientX;
 });
 
 document.addEventListener('touchend', (e) => {
-    const touchEndX = e.changedTouches[0].clientX;
-    const diff = touchEndX - touchStartX;
-    
+    const diff = e.changedTouches[0].clientX - touchStartX;
     if (Math.abs(diff) > 80) {
         const activeTab = document.querySelector('.tab.active');
         const tabs = Array.from(elements.tabs);
-        const currentIndex = tabs.indexOf(activeTab);
-        
-        if (diff < 0 && currentIndex < tabs.length - 1) {
-            // Swipe left
-            switchTab(tabs[currentIndex + 1].dataset.tab);
-        } else if (diff > 0 && currentIndex > 0) {
-            // Swipe right
-            switchTab(tabs[currentIndex - 1].dataset.tab);
-        }
+        const idx = tabs.indexOf(activeTab);
+        if (diff < 0 && idx < tabs.length - 1) switchTab(tabs[idx + 1].dataset.tab);
+        else if (diff > 0 && idx > 0) switchTab(tabs[idx - 1].dataset.tab);
     }
 });
 
 // ============ INIT ============
 async function init() {
-    console.log('🚀 Iniciando FRIBAL Scan...');
-    console.log('📱 User Agent:', navigator.userAgent);
-    console.log('🔒 HTTPS:', window.location.protocol === 'https:');
+    console.log('🚀 Iniciando FRIBAL Scan v2...');
     
     initScanner();
-    
-    // Tentar carregar planilha automaticamente
     const loaded = await autoLoadExcel();
     
     if (loaded) {
-        // Pequeno delay para garantir que tudo está pronto
         setTimeout(async () => {
             await startScanner();
         }, 1000);
     } else {
-        console.log('⚠️ Faça upload manual da planilha');
         elements.scannerStatus.textContent = '⚠️ Carregue a planilha para usar o scanner';
     }
 }
 
-// Service Worker para PWA (opcional, melhora experiência mobile)
-if ('serviceWorker' in navigator) {
-    // Pode adicionar service worker para cache offline
-}
-
 init();
-
-// Log de debug
-console.log('📋 Script carregado. Aguardando interação...');
